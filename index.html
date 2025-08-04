@@ -50,6 +50,10 @@
           <span id="fiberDisplay">Disabled</span>
         </div>
         <div class="stat-item">
+          <span>Interactive:</span>
+          <span id="interactiveFiberDisplay">Active</span>
+        </div>
+        <div class="stat-item">
           <span>Shape:</span>
           <span id="shapeDisplay">Logo</span>
         </div>
@@ -90,19 +94,26 @@
       <div class="control-group">
         <h4>Fiber System</h4>
         <button id="fibersEnabled" class="toggle-btn">Enable Fibers</button>
+        <button id="interactiveFibersEnabled" class="toggle-btn active">Interactive Fibers</button>
         
         <label>Fiber Strength: <span id="fiberStrengthValue">0.5</span></label>
         <input type="range" id="fiberStrength" min="0" max="2" value="0.5" step="0.1">
         
         <label>Connection Distance: <span id="connectionDistanceValue">2.0</span></label>
         <input type="range" id="connectionDistance" min="0.5" max="5" value="2.0" step="0.1">
+        
+        <label>Mouse Connection Distance: <span id="mouseConnectionDistanceValue">10.0</span></label>
+        <input type="range" id="mouseConnectionDistance" min="5" max="20" value="10.0" step="0.5">
+        
+        <label>Fiber Opacity: <span id="fiberOpacityValue">0.9</span></label>
+        <input type="range" id="fiberOpacity" min="0.1" max="1.0" value="0.9" step="0.1">
       </div>
 
       <!-- Post-processing -->
       <div class="control-group">
         <h4>Post-Processing</h4>
         <label>Bloom Strength: <span id="bloomStrengthValue">1.4</span></label>
-        <input type="range" id="bloomStrength" min="0" max="3" value="1.4" step="0.1">
+        <input type="range" id="bloomStrength" min="0" max="10" value="1.4" step="0.01">
         
         <label>Bloom Radius: <span id="bloomRadiusValue">0.8</span></label>
         <input type="range" id="bloomRadius" min="0.1" max="2" value="0.8" step="0.1">

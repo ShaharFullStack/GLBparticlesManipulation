@@ -51,10 +51,21 @@ document.body.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-controls.rotateSpeed = 0.5;
+controls.rotateSpeed = 1.0; // Enable rotation
+controls.zoomSpeed = 1.0;
+controls.panSpeed = 0.8;
 controls.minDistance = 1;
 controls.maxDistance = 200;
 controls.target.set(0, 0, 0);
+controls.enableRotate = true; // Ensure rotation is enabled
+controls.enableZoom = true;   // Ensure zoom is enabled
+controls.enablePan = true;    // Ensure panning is enabled
+
+// Add event listener to verify controls are working
+controls.addEventListener('change', () => {
+  console.log('Camera controls changed - rotation/zoom/pan working');
+});
+
 controls.update();
 
 scene.add(new THREE.AmbientLight(0x1a0033, 0.8));
@@ -77,7 +88,7 @@ const bloomResolution = isMobile ?
   
 const bloom = new UnrealBloomPass(bloomResolution, 1.2, 0.6, 0.9);
 bloom.threshold = isMobile ? 0.2 : 0.1; // Higher threshold on mobile
-bloom.strength = isMobile ? 1.0 : 1.4;  // Reduced strength on mobile
+bloom.strength = 0.3;  // Reduced bloom strength
 bloom.radius = isMobile ? 0.6 : 0.8;    // Smaller radius on mobile
 composer.addPass(bloom);
 
@@ -202,7 +213,21 @@ async function initializeTargets() {
     // Set initial position to first GLB model
     if (targets.length > 0) {
       const positionArray = particles.geometry.attributes.position.array;
-      positionArray.set(targets[0]);
+      const targetArray = targets[0];
+      
+      // Safely copy target positions, handling size mismatches
+      const copyLength = Math.min(positionArray.length, targetArray.length);
+      for (let i = 0; i < copyLength; i++) {
+        positionArray[i] = targetArray[i];
+      }
+      
+      // If we have fewer target points than particles, repeat the pattern
+      if (targetArray.length < positionArray.length) {
+        for (let i = copyLength; i < positionArray.length; i++) {
+          positionArray[i] = targetArray[i % targetArray.length];
+        }
+      }
+      
       particles.geometry.attributes.position.needsUpdate = true;
     }
     
@@ -268,12 +293,194 @@ const mat = new THREE.PointsMaterial({
   transparent: true,
   opacity: 0.9,
   blending: THREE.AdditiveBlending,
-  depthWrite: false
+  depthWrite: true // Enable depth writing for better blending
 });
 
-const particles = new THREE.Points(geom, mat);
+let particles = new THREE.Points(geom, mat);
 particles.userData = { targets: [], origCols, twinkle };
 scene.add(particles);
+
+// Fiber system for rendering connections between particles
+let fiberGeometry = new THREE.BufferGeometry();
+let fiberMaterial = new THREE.LineBasicMaterial({ vertexColors: true });
+let fiberLines = new THREE.LineSegments(fiberGeometry, fiberMaterial);
+scene.add(fiberLines);
+
+// Initialize fiber system
+
+async function initializeFiberSystem() {
+  if (!useWebGPU || !webgpuSystem) return;
+  try {
+    // Enable fibers and initialize them
+    webgpuSystem.enableFibers(true);
+    await webgpuSystem.initializeFibers();
+    fiberGeometry = new THREE.BufferGeometry();
+    fiberGeometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(1000 * 6), 3)); // 1000 lines, 6 floats per line (2 points)
+    fiberGeometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(1000 * 6), 3)); // 1000 lines, 6 floats per line (2 colors)
+    fiberLines.geometry = fiberGeometry;
+  } catch (error) {
+    console.warn('Failed to initialize fiber system:', error);
+  }
+}
+
+// Function to update fiber connections
+function updateFiberConnections() {
+  if (!useWebGPU || !webgpuSystem) return;
+  webgpuSystem.updateFiberConnections();
+  if (fiberLines && fiberLines.geometry) {
+    fiberLines.geometry.attributes.position.needsUpdate = true;
+    fiberLines.geometry.attributes.color.needsUpdate = true;
+  } else {
+    console.warn('Fiber lines geometry not available for update');
+    fiberLines.geometry = fiberGeometry;
+    fiberLines.geometry.attributes.position.needsUpdate = true;
+    fiberLines.geometry.attributes.color.needsUpdate = true;
+    scene.add(fiberLines);
+  }
+}
+
+
+// Initialize fiber system
+initializeFiberSystem();
+
+// Interactive connection system (similar to PageBackground.tsx)
+let interactiveFiberGeometry = new THREE.BufferGeometry();
+let interactiveFiberMaterial = new THREE.LineBasicMaterial({ 
+  color: 0x0891b2, 
+  transparent: true, 
+  opacity: 0.9,
+  vertexColors: false
+});
+let interactiveFiberLines = new THREE.LineSegments(interactiveFiberGeometry, interactiveFiberMaterial);
+scene.add(interactiveFiberLines);
+
+// Make interactive fiber objects globally accessible for controls
+window.interactiveFiberLines = interactiveFiberLines;
+window.interactiveFiberMaterial = interactiveFiberMaterial;
+
+// Mouse tracking for interactive fibers
+let mouse = new THREE.Vector2();
+let mouseWorld = new THREE.Vector3();
+let interactiveFiberUpdateCounter = 0;
+
+// Function to update interactive fiber connections
+function updateInteractiveFibers() {
+  if (!particles || !particles.geometry || !controlState.interactiveFibersEnabled) {
+    // Clear connections if disabled
+    interactiveFiberGeometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(0), 3));
+    return;
+  }
+  
+  // Throttle updates for performance
+  interactiveFiberUpdateCounter++;
+  if (interactiveFiberUpdateCounter % (isMobile ? 3 : 2) !== 0) return;
+  
+  const positions = particles.geometry.attributes.position.array;
+  const linePositions = [];
+  const lineColors = [];
+  const connectionDistance = controlState.connectionDistance || 2.0; // Short distance for particle connections
+  const mouseConnectionDistance = controlState.mouseConnectionDistance || 8.0; // Slightly longer for mouse
+  const maxConnections = isMobile ? 80 : 150; // More connections but still performant
+  let connectionCount = 0;
+  
+  // Convert mouse position to world coordinates (scaled to match particle space)
+  mouseWorld.set(
+    mouse.x * 12, // Reduced scale to match particle distribution
+    mouse.y * 8,  // Reduced scale to match particle distribution
+    0
+  );
+  
+  // Mouse connection color (cyan/teal)
+  const mouseConnectionColor = new THREE.Color(0x2dd4bf);
+  // Particle connection color (blue)
+  const particleConnectionColor = new THREE.Color(0x0891b2);
+  
+  // Check connections between particles and mouse
+  for (let i = 0; i < positions.length && connectionCount < maxConnections; i += 3) {
+    const particleA = new THREE.Vector3(positions[i], positions[i + 1], positions[i + 2]);
+    
+    // Connect to mouse if within range
+    const distToMouse = particleA.distanceTo(mouseWorld);
+    if (distToMouse < mouseConnectionDistance) {
+      linePositions.push(
+        particleA.x, particleA.y, particleA.z,
+        mouseWorld.x, mouseWorld.y, mouseWorld.z
+      );
+      
+      // Add colors for both endpoints (brighter for closer connections)
+      const intensity = 1.0 - (distToMouse / mouseConnectionDistance);
+      const brightColor = mouseConnectionColor.clone().multiplyScalar(0.5 + intensity * 0.5);
+      lineColors.push(brightColor.r, brightColor.g, brightColor.b);
+      lineColors.push(brightColor.r, brightColor.g, brightColor.b);
+      
+      connectionCount++;
+    }
+  }
+  
+  // Check connections between particles (optimized for shorter distances)
+  const sampleRate = isMobile ? 4 : 3; // Sample every nth particle
+  for (let i = 0; i < positions.length && connectionCount < maxConnections; i += 3 * sampleRate) {
+    const particleA = new THREE.Vector3(positions[i], positions[i + 1], positions[i + 2]);
+    
+    // Check nearby particles in a smaller radius for better performance
+    const searchRadius = 60; // Much smaller search radius
+    let particleConnections = 0; // Limit connections per particle
+    const maxConnectionsPerParticle = 3;
+    
+    for (let j = i + 3 * sampleRate; j < Math.min(positions.length, i + searchRadius) && connectionCount < maxConnections && particleConnections < maxConnectionsPerParticle; j += 3 * sampleRate) {
+      const particleB = new THREE.Vector3(positions[j], positions[j + 1], positions[j + 2]);
+      const distance = particleA.distanceTo(particleB);
+      
+      // Only connect if particles are very close together and add some randomness for organic feel
+      if (distance < connectionDistance && distance > 0.1 && Math.random() > 0.6) {
+        linePositions.push(
+          particleA.x, particleA.y, particleA.z,
+          particleB.x, particleB.y, particleB.z
+        );
+        
+        // Add colors (dimmer for distant connections)
+        const intensity = 1.0 - (distance / connectionDistance);
+        const dimColor = particleConnectionColor.clone().multiplyScalar(0.3 + intensity * 0.4);
+        lineColors.push(dimColor.r, dimColor.g, dimColor.b);
+        lineColors.push(dimColor.r, dimColor.g, dimColor.b);
+        
+        connectionCount++;
+        particleConnections++;
+      }
+    }
+  }
+  
+  // Update geometry
+  if (linePositions.length > 0) {
+    interactiveFiberGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+    interactiveFiberGeometry.setAttribute('color', new THREE.Float32BufferAttribute(lineColors, 3));
+    
+    // Enable vertex colors if we have color data
+    if (!interactiveFiberMaterial.vertexColors) {
+      interactiveFiberMaterial.vertexColors = true;
+      interactiveFiberMaterial.needsUpdate = true;
+    }
+  } else {
+    // Clear connections if none exist
+    interactiveFiberGeometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(0), 3));
+    interactiveFiberGeometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(0), 3));
+  }
+  
+  // Update material opacity based on control state
+  interactiveFiberMaterial.opacity = controlState.fiberOpacity;
+}
+
+// Mouse event listeners
+function handleMouseMove(event) {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  
+  // Update control state mouse position
+  controlState.mousePos.x = mouse.x;
+  controlState.mousePos.y = mouse.y;
+}
+
+window.addEventListener('mousemove', handleMouseMove);
 
 let shapeIndex = 0;
 const clock = new THREE.Clock();
@@ -586,10 +793,20 @@ function animate() {
     webgpuSystem.updateUniforms(time, dt, controlState);
     webgpuSystem.compute();
     
+    // Update fiber connections if enabled
+    if (controlState.fibersEnabled && Math.random() < 0.1) { // Update fibers occasionally for performance
+      updateFiberConnections();
+    }
+    
     // Only sync during morphing to avoid performance hit
     if (controlState.morphProgress > 0) {
       syncWebGPUParticles();
     }
+  }
+  
+  // Update interactive fiber connections (mouse and proximity-based)
+  if (controlState.fibersEnabled) {
+    updateInteractiveFibers();
   }
   
   // Apply hover effects to Three.js particles (fallback when WebGPU is not available)
@@ -682,6 +899,129 @@ function updateBloomRadius(radius) {
   }
 }
 
+function toggleFiberVisibility(enabled) {
+  if (fiberLines) {
+    fiberLines.visible = enabled;
+  }
+}
+
+async function updateParticleCount(newCount) {
+  const actualCount = isMobile ? Math.min(newCount, 1500) : newCount;
+  
+  // Remove existing particles from scene
+  if (particles) {
+    scene.remove(particles);
+    particles.geometry.dispose();
+    particles.material.dispose();
+  }
+  
+  // Create new geometry with new particle count
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(actualCount * 3), 3));
+  
+  // Re-allocate arrays
+  const colArr = new Float32Array(actualCount * 3);
+  const origCols = new Array(actualCount);
+  const twinkle = new Float32Array(actualCount);
+  const sizes = new Float32Array(actualCount);
+  
+  // Pre-computed color palette for performance
+  const palette = [
+    new THREE.Color(0x00ffff),
+    new THREE.Color(0xff0080),
+    new THREE.Color(0x8000ff),
+    new THREE.Color(0x00ff40),
+    new THREE.Color(0xff4000),
+    new THREE.Color(0x4080ff)
+  ];
+  
+  // Apply current color palette if it's been changed
+  const currentPalette = colorPalettes[controlState.colorPalette] || palette;
+  
+  // Initialize particle colors and properties
+  const tempColor = new THREE.Color();
+  for (let i = 0; i < actualCount; i++) {
+    const t = i / Math.max(actualCount - 1, 1);
+    const idx = t * (currentPalette.length - 1);
+    const floorIdx = Math.floor(idx);
+    const ceilIdx = Math.min(Math.ceil(idx), currentPalette.length - 1);
+    const mix = idx % 1;
+    
+    tempColor.lerpColors(currentPalette[floorIdx], currentPalette[ceilIdx], mix).multiplyScalar(1.3);
+    
+    const i3 = i * 3;
+    colArr[i3] = tempColor.r;
+    colArr[i3 + 1] = tempColor.g;
+    colArr[i3 + 2] = tempColor.b;
+    
+    origCols[i] = tempColor.clone();
+    twinkle[i] = Math.random() < 0.5 ? Math.random() * 6 + 3 : 0;
+    sizes[i] = 0.02 + Math.random() * 0.04;
+  }
+  
+  geom.setAttribute('color', new THREE.Float32BufferAttribute(colArr, 3));
+  geom.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+  geom.computeBoundingSphere();
+  
+  // Create new material with current settings
+  const mat = new THREE.PointsMaterial({
+    size: controlState.particleSize,
+    vertexColors: true,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: controlState.particleOpacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  
+  // Create new particles object
+  particles = new THREE.Points(geom, mat);
+  particles.userData = { targets: [], origCols, twinkle };
+  scene.add(particles);
+  
+  // Reload targets with new particle count
+  try {
+    const loadPromises = [
+      createGLBPoints('./glb/logo.glb', actualCount, 12.0),
+      createGLBPoints('./glb/life.glb', actualCount, 12.0),
+      createGLBPoints('./glb/nati.glb', actualCount, 12.0)
+    ];
+    
+    targets = await Promise.all(loadPromises);
+    particles.userData.targets = targets;
+    
+    // Set initial position to current target
+    if (targets.length > 0 && targets[shapeIndex]) {
+      const positionArray = particles.geometry.attributes.position.array;
+      const targetArray = targets[shapeIndex];
+      
+      // Safely copy target positions, handling size mismatches
+      const copyLength = Math.min(positionArray.length, targetArray.length);
+      for (let i = 0; i < copyLength; i++) {
+        positionArray[i] = targetArray[i];
+      }
+      
+      // If we have fewer target points than particles, repeat the pattern
+      if (targetArray.length < positionArray.length) {
+        for (let i = copyLength; i < positionArray.length; i++) {
+          positionArray[i] = targetArray[i % targetArray.length];
+        }
+      }
+      
+      particles.geometry.attributes.position.needsUpdate = true;
+    }
+    
+    console.log(`Updated particle system: ${actualCount} particles`);
+    
+    // Update display
+    const display = document.getElementById('particleDisplay');
+    if (display) display.textContent = actualCount;
+    
+  } catch (error) {
+    console.error('Failed to reload GLB models with new particle count:', error);
+  }
+}
+
 // Initialize application
 gsapScript.onload = async () => {
   try {
@@ -707,10 +1047,12 @@ gsapScript.onload = async () => {
     
     // Set up control panel update functions
     window.updateParticleColors = updateParticleColors;
+    window.updateParticleCount = updateParticleCount;
     window.updateParticleSize = updateParticleSize;
     window.updateParticleOpacity = updateParticleOpacity;
     window.updateBloomStrength = updateBloomStrength;
     window.updateBloomRadius = updateBloomRadius;
+    window.toggleFiberVisibility = toggleFiberVisibility;
     
     animate();
     
