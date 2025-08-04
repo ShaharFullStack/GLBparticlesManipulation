@@ -22,7 +22,11 @@ const particleComputeShader = `
     turbulence: f32,
     attraction: f32,
     morphProgress: f32,
-    mousePos: vec2<f32>
+    mousePos: vec2<f32>,
+    hoverRadius: f32,
+    hoverStrength: f32,
+    mouseInfluence: f32,
+    hoverRepulsion: f32
   };
   
   @group(0) @binding(0) var<storage, read_write> particles: array<Particle>;
@@ -54,13 +58,46 @@ const particleComputeShader = `
     // Gravity
     let gravityForce = vec3<f32>(0.0, -uniforms.gravity, 0.0);
     
+    // Morphing system - update particle target based on morphProgress
+    if (index < arrayLength(&targets)) {
+      let currentTarget = targets[index];
+      
+      if (uniforms.morphProgress > 0.0) {
+        // During morphing, interpolate towards new target
+        particle.target = mix(particle.target, currentTarget, uniforms.morphProgress);
+      } else {
+        // Normal attraction to current target
+        particle.target = currentTarget;
+      }
+    }
+    
     // Attraction to target
     let targetForce = (particle.target - particle.position) * uniforms.attraction;
     
-    // Mouse attraction
-    let mousePos3D = vec3<f32>(uniforms.mousePos.x, uniforms.mousePos.y, 0.0);
-    let mouseDistance = distance(particle.position, mousePos3D);
-    let mouseForce = normalize(mousePos3D - particle.position) * (1.0 / (mouseDistance + 1.0)) * 0.5;
+    // Mouse attraction with hover effects
+    let mouseForce = vec3<f32>(0.0);
+    if (uniforms.hoverRadius > 0.0) {
+      let mousePos3D = vec3<f32>(uniforms.mousePos.x, uniforms.mousePos.y, 0.0);
+      let mouseDistance = distance(particle.position, mousePos3D);
+      
+      if (mouseDistance < uniforms.hoverRadius) {
+        let direction = normalize(mousePos3D - particle.position);
+        let falloff = 1.0 - (mouseDistance / uniforms.hoverRadius);
+        let strength = falloff * falloff * uniforms.hoverStrength * uniforms.mouseInfluence;
+        
+        // Repulsion or attraction based on mode
+        if (uniforms.hoverRepulsion > 0.5) {
+          mouseForce = -direction * strength;
+        } else {
+          mouseForce = direction * strength;
+        }
+      } else {
+        // Gentle long-range attraction
+        let direction = normalize(mousePos3D - particle.position);
+        let longRangeStrength = (1.0 / (mouseDistance + 1.0)) * 0.3 * uniforms.mouseInfluence;
+        mouseForce = direction * longRangeStrength;
+      }
+    }
     
     // Apply forces
     particle.velocity += (turbulenceForce + gravityForce + targetForce + mouseForce) * dt;
@@ -212,7 +249,7 @@ class WebGPUParticleSystem {
     
     // Uniform buffer
     this.buffers.uniforms = this.device.createBuffer({
-      size: 32, // 8 floats
+      size: 64, // 16 floats (increased for hover parameters)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
     
@@ -318,7 +355,13 @@ class WebGPUParticleSystem {
       params.turbulence || 0.1,
       params.attraction || 1,
       params.morphProgress || 0,
-      0 // padding
+      params.mousePos?.x || 0,
+      params.mousePos?.y || 0,
+      params.hoverRadius || 3.0,
+      params.hoverStrength || 2.0,
+      params.mouseInfluence || 1.0,
+      params.hoverRepulsion ? 1.0 : 0.0,
+      0, 0, 0 // padding for 16-byte alignment
     ]);
     
     this.device.queue.writeBuffer(this.buffers.uniforms, 0, uniformData);
@@ -335,8 +378,12 @@ class WebGPUParticleSystem {
   }
   
   updateTargets(targetData) {
+    console.log('WebGPU updateTargets called with data length:', targetData?.length);
     if (targetData && targetData.length >= this.particleCount * 3) {
       this.device.queue.writeBuffer(this.buffers.targets, 0, targetData);
+      console.log('WebGPU targets updated successfully');
+    } else {
+      console.warn('WebGPU target data insufficient:', targetData?.length, 'required:', this.particleCount * 3);
     }
   }
   

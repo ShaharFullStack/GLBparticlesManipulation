@@ -1,82 +1,20 @@
-  <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    width: 100%; height: 100%;
-    overflow: hidden;
-    background: radial-gradient(circle at center, #1a0033 0%, #000 100%);
-    font-family: 'Inter', sans-serif;
-  }
-  canvas {
-    position: fixed;
-    top: 50%; left: 50%;
-    width: 100%; height: 100vh;
-    transform: translate(-50%, -50%);
-    z-index: 1;
-  }
-  #morphButton {
-    position: fixed;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 56px;
-    height: 56px;
-    background: rgba(22, 12, 40, 0.75);
-    color: #fff;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s ease;
-    overflow: hidden;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-  }
-  #morphButton::before {
-    content: '';
-    position: absolute;
-    z-index: -1;
-    top: -2px; left: -2px;
-    width: calc(100% + 4px);
-    height: calc(100% + 4px);
-    background: conic-gradient(from 0deg, #8000ff, #ff66cc, #00ffff, #8000ff);
-    border-radius: 50%;
-    animation: rotate 4s linear infinite;
-  }
-  #morphButton::after {
-    content: '';
-    position: absolute;
-    z-index: -1;
-    width: 100%; height: 100%;
-    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-    border-radius: 50%;
-  }
-  @keyframes rotate {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(360deg); }
-  }
-  #morphButton:hover {
-    transform: translateX(-50%) scale(1.1);
-    box-shadow: 0 0 25px rgba(179, 102, 255, 0.7);
-  }
-  #morphButton:active {
-    transform: translateX(-50%) scale(1);
-  }
-  #morphButton svg {
-    width: 24px; height: 24px;
-    transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
-  }
-  #morphButton:hover svg {
-    transform: rotate(180deg);
-  }
-  </style>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rhythm Game - Interactive Particle System</title>
+  
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+  <!-- Morph Button -->
   <button id="morphButton">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M3 2v6h6"/>
@@ -86,6 +24,136 @@
     </svg>
   </button>
 
+  <!-- Control Panel -->
+  <div id="controlPanel" class="control-panel">
+    <button id="togglePanel" class="panel-toggle">⚙️</button>
+    
+    <div class="panel-content">
+      <h3>Particle Controls</h3>
+      
+      <!-- Performance Stats -->
+      <div class="stat-group">
+        <div class="stat-item">
+          <span>FPS:</span>
+          <span id="fpsDisplay">60</span>
+        </div>
+        <div class="stat-item">
+          <span>WebGPU:</span>
+          <span id="webgpuStatus">Checking...</span>
+        </div>
+        <div class="stat-item">
+          <span>Particles:</span>
+          <span id="particleDisplay">2500</span>
+        </div>
+        <div class="stat-item">
+          <span>Fibers:</span>
+          <span id="fiberDisplay">Disabled</span>
+        </div>
+        <div class="stat-item">
+          <span>Shape:</span>
+          <span id="shapeDisplay">Logo</span>
+        </div>
+      </div>
+
+      <!-- Particle Controls -->
+      <div class="control-group">
+        <label>Particle Count: <span id="particleCountValue">2500</span></label>
+        <input type="range" id="particleCount" min="500" max="10000" value="2500" step="100">
+        
+        <label>Particle Size: <span id="particleSizeValue">0.03</span></label>
+        <input type="range" id="particleSize" min="0.01" max="0.1" value="0.03" step="0.001">
+        
+        <label>Opacity: <span id="particleOpacityValue">0.9</span></label>
+        <input type="range" id="particleOpacity" min="0.1" max="1.0" value="0.9" step="0.1">
+      </div>
+
+      <!-- Physics Controls -->
+      <div class="control-group">
+        <h4>Physics</h4>
+        <label>Gravity: <span id="gravityValue">0</span></label>
+        <input type="range" id="gravity" min="-2" max="2" value="0" step="0.1">
+        
+        <label>Turbulence: <span id="turbulenceValue">0.1</span></label>
+        <input type="range" id="turbulence" min="0" max="1" value="0.1" step="0.01">
+        
+        <label>Attraction: <span id="attractionValue">1.0</span></label>
+        <input type="range" id="attraction" min="0" max="3" value="1.0" step="0.1">
+        
+        <label>Morph Speed: <span id="morphSpeedValue">2.0</span></label>
+        <input type="range" id="morphSpeed" min="0.5" max="5" value="2.0" step="0.1">
+        
+        <label>Rotation Speed: <span id="rotationSpeedValue">0.005</span></label>
+        <input type="range" id="rotationSpeed" min="0" max="0.02" value="0.005" step="0.001">
+      </div>
+
+      <!-- Fiber Controls -->
+      <div class="control-group">
+        <h4>Fiber System</h4>
+        <button id="fibersEnabled" class="toggle-btn">Enable Fibers</button>
+        
+        <label>Fiber Strength: <span id="fiberStrengthValue">0.5</span></label>
+        <input type="range" id="fiberStrength" min="0" max="2" value="0.5" step="0.1">
+        
+        <label>Connection Distance: <span id="connectionDistanceValue">2.0</span></label>
+        <input type="range" id="connectionDistance" min="0.5" max="5" value="2.0" step="0.1">
+      </div>
+
+      <!-- Post-processing -->
+      <div class="control-group">
+        <h4>Post-Processing</h4>
+        <label>Bloom Strength: <span id="bloomStrengthValue">1.4</span></label>
+        <input type="range" id="bloomStrength" min="0" max="3" value="1.4" step="0.1">
+        
+        <label>Bloom Radius: <span id="bloomRadiusValue">0.8</span></label>
+        <input type="range" id="bloomRadius" min="0.1" max="2" value="0.8" step="0.1">
+      </div>
+
+      <!-- Hover Integration -->
+      <div class="control-group">
+        <h4>Hover Integration</h4>
+        <button id="hoverEnabled" class="toggle-btn active">Enable Hover Effects</button>
+        
+        <label>Hover Radius: <span id="hoverRadiusValue">3.0</span></label>
+        <input type="range" id="hoverRadius" min="1" max="8" value="3.0" step="0.1">
+        
+        <label>Hover Strength: <span id="hoverStrengthValue">2.0</span></label>
+        <input type="range" id="hoverStrength" min="0.5" max="5" value="2.0" step="0.1">
+        
+        <label>Mouse Influence: <span id="mouseInfluenceValue">1.0</span></label>
+        <input type="range" id="mouseInfluence" min="0" max="3" value="1.0" step="0.1">
+        
+        <button id="hoverRepulsion" class="toggle-btn">Repulsion Mode</button>
+        <button id="particleTrail" class="toggle-btn">Particle Trail</button>
+        <button id="autoRotate" class="toggle-btn active">Auto Rotate</button>
+      </div>
+
+      <!-- Color Palettes -->
+      <div class="control-group">
+        <h4>Color Palette</h4>
+        <div class="color-palette">
+          <div class="color-option active" data-palette="0" style="background: linear-gradient(45deg, #00ffff, #ff0080, #8000ff);" title="Cyberpunk"></div>
+          <div class="color-option" data-palette="1" style="background: linear-gradient(45deg, #ff6b35, #f7931e, #ffd23f);" title="Sunset"></div>
+          <div class="color-option" data-palette="2" style="background: linear-gradient(45deg, #4ecdc4, #44a08d, #006064);" title="Ocean"></div>
+          <div class="color-option" data-palette="3" style="background: linear-gradient(45deg, #667eea, #764ba2, #9c27b0);" title="Galaxy"></div>
+          <div class="color-option" data-palette="4" style="background: linear-gradient(45deg, #ff9a9e, #fecfef, #ff6b9d);" title="Rose"></div>
+          <div class="color-option" data-palette="5" style="background: linear-gradient(45deg, #a8edea, #fed6e3, #81c784);" title="Mint"></div>
+        </div>
+      </div>
+
+      <!-- Presets -->
+      <div class="control-group">
+        <h4>Presets</h4>
+        <div class="preset-buttons">
+          <button class="preset-btn" data-preset="organic">Organic</button>
+          <button class="preset-btn" data-preset="digital">Digital</button>
+          <button class="preset-btn" data-preset="cosmic">Cosmic</button>
+          <button class="preset-btn" data-preset="minimal">Minimal</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js Import Map -->
   <script type="importmap">
   {
     "imports": {
@@ -95,394 +163,7 @@
   }
   </script>
 
-  <script type="module">
-  import * as THREE from 'three';
-  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-  import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-  import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-  import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
-  import { FilmPass } from 'three/addons/postprocessing/FilmPass.js';
-  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-
-  // Mobile detection - must be defined early as it's used throughout
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-  const gsapScript = document.createElement('script');
-  gsapScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
-  document.head.appendChild(gsapScript);
-
-  const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x000000, 0.002);
-
-  const camera = new THREE.PerspectiveCamera(100, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 0, 10);
-
-  // Optimize renderer settings for performance
-  const renderer = new THREE.WebGLRenderer({ 
-    antialias: !isMobile, // Disable antialiasing on mobile for better performance
-    powerPreference: 'high-performance',
-    stencil: false, // Disable stencil buffer if not needed
-    depth: true
-  });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  
-  // Limit pixel ratio on mobile to prevent performance issues
-  const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 2) : window.devicePixelRatio;
-  renderer.setPixelRatio(pixelRatio);
-  
-  // Enable additional optimizations
-  renderer.sortObjects = false; // Disable sorting for particles
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  
-  document.body.appendChild(renderer.domElement);
-
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
-  controls.rotateSpeed = 0.5;
-  controls.minDistance = 1;
-  controls.maxDistance = 200;
-  controls.target.set(0, 0, 0);
-  controls.update();
-
-  scene.add(new THREE.AmbientLight(0x1a0033, 0.8));
-  const dirLight = new THREE.DirectionalLight(0xff66cc, 0.4);
-  dirLight.position.set(5, 10, 7.5);
-  scene.add(dirLight);
-
-  const dirLight2 = new THREE.DirectionalLight(0x00ffff, 0.3);
-  dirLight2.position.set(-5, -10, -7.5);
-  scene.add(dirLight2);
-
-  // Adaptive post-processing based on device capability
-  const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-
-  // Reduce bloom quality on mobile for better performance
-  const bloomResolution = isMobile ? 
-    new THREE.Vector2(window.innerWidth * 0.5, window.innerHeight * 0.5) :
-    new THREE.Vector2(window.innerWidth, window.innerHeight);
-    
-  const bloom = new UnrealBloomPass(bloomResolution, 1.2, 0.6, 0.9);
-  bloom.threshold = isMobile ? 0.2 : 0.1; // Higher threshold on mobile
-  bloom.strength = isMobile ? 1.0 : 1.4;  // Reduced strength on mobile
-  bloom.radius = isMobile ? 0.6 : 0.8;    // Smaller radius on mobile
-  composer.addPass(bloom);
-
-  // Optional effects for desktop only
-  if (!isMobile) {
-    composer.addPass(new FilmPass(0.5, 0.4, 1024, false));
-    const rgbShift = new ShaderPass(RGBShiftShader);
-    rgbShift.uniforms['amount'].value = 0.003;
-    composer.addPass(rgbShift);
-  }
-
-
-  // GLB loading cache for performance
-  const glbCache = new Map();
-  
-  async function createGLBPoints(filePath, totalPoints, scale = 10.0) {
-    // Check cache first
-    const cacheKey = `${filePath}_${totalPoints}_${scale}`;
-    if (glbCache.has(cacheKey)) {
-      return glbCache.get(cacheKey);
-    }
-
-    return new Promise((resolve, reject) => {
-      const loader = new GLTFLoader();
-      loader.load(
-        filePath,
-        (gltf) => {
-          const vertices = [];
-          const tempVertex = new THREE.Vector3();
-          
-          gltf.scene.traverse((child) => {
-            if (child.isMesh && child.geometry) {
-              const geometry = child.geometry;
-              const positionAttribute = geometry.attributes.position;
-              if (positionAttribute) {
-                const matrix = child.matrixWorld;
-                const array = positionAttribute.array;
-                
-                // Optimized vertex extraction using direct array access
-                for (let i = 0; i < positionAttribute.count; i++) {
-                  const i3 = i * 3;
-                  tempVertex.set(array[i3], array[i3 + 1], array[i3 + 2]);
-                  tempVertex.applyMatrix4(matrix);
-                  tempVertex.multiplyScalar(scale);
-                  vertices.push(tempVertex.clone());
-                }
-              }
-            }
-          });
-
-          if (vertices.length === 0) {
-            const emptyArray = new Float32Array(totalPoints * 3);
-            glbCache.set(cacheKey, emptyArray);
-            resolve(emptyArray);
-            return;
-          }
-
-          // Optimized centering and sampling
-          const box = new THREE.Box3().setFromPoints(vertices);
-          const center = box.getCenter(new THREE.Vector3());
-          
-          const pts = new Float32Array(totalPoints * 3);
-          const vertexCount = vertices.length;
-          
-          if (vertexCount >= totalPoints) {
-            // Uniform sampling for better distribution
-            for (let i = 0; i < totalPoints; i++) {
-              const idx = Math.floor((i / totalPoints) * vertexCount);
-              const v = vertices[idx];
-              const i3 = i * 3;
-              pts[i3] = v.x - center.x;
-              pts[i3 + 1] = v.y - center.y;
-              pts[i3 + 2] = v.z - center.z;
-            }
-          } else {
-            // Repeat vertices when we have fewer than needed
-            for (let i = 0; i < totalPoints; i++) {
-              const v = vertices[i % vertexCount];
-              const i3 = i * 3;
-              pts[i3] = v.x - center.x;
-              pts[i3 + 1] = v.y - center.y;
-              pts[i3 + 2] = v.z - center.z;
-            }
-          }
-
-          glbCache.set(cacheKey, pts);
-          resolve(pts);
-        },
-        (progress) => {
-          // Optional: Add loading progress feedback
-          console.log(`Loading ${filePath}: ${(progress.loaded / progress.total * 100).toFixed(1)}%`);
-        },
-        (error) => {
-          console.error('Error loading GLB:', error);
-          const fallbackArray = new Float32Array(totalPoints * 3);
-          glbCache.set(cacheKey, fallbackArray);
-          resolve(fallbackArray);
-        }
-      );
-    });
-  }
-
-  const count = 2500;
-  let targets = [];
-  let currentTargetIndex = 0;
-
-  // Mobile performance detection
-  const particleCount = isMobile ? Math.min(count, 1500) : count; // Reduce particles on mobile
-  
-  async function initializeTargets() {
-    // Parallel loading for better performance
-    const loadPromises = [
-      createGLBPoints('./glb/life.glb', particleCount, 12.0),
-      createGLBPoints('./glb/logo.glb', particleCount, 12.0),
-      createGLBPoints('./glb/nati.glb', particleCount, 12.0)
-    ];
-    
-    try {
-      targets = await Promise.all(loadPromises);
-      particles.userData.targets = targets;
-      
-      // Set initial position to first GLB model
-      if (targets.length > 0) {
-        const positionArray = particles.geometry.attributes.position.array;
-        positionArray.set(targets[0]);
-        particles.geometry.attributes.position.needsUpdate = true;
-      }
-      
-      console.log(`Loaded ${targets.length} GLB models with ${particleCount} particles each`);
-      return targets;
-    } catch (error) {
-      console.error('Failed to load GLB models:', error);
-      return [];
-    }
-  }
-
-  // Use actual particle count for geometry
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(particleCount * 3), 3));
-
-  // Pre-allocate arrays for better memory efficiency
-  const colArr = new Float32Array(particleCount * 3);
-  const origCols = new Array(particleCount);
-  const twinkle = new Float32Array(particleCount);
-  const sizes = new Float32Array(particleCount);
-  
-  // Pre-computed color palette for performance
-  const palette = [
-    new THREE.Color(0x00ffff),
-    new THREE.Color(0xff0080),
-    new THREE.Color(0x8000ff),
-    new THREE.Color(0x00ff40),
-    new THREE.Color(0xff4000),
-    new THREE.Color(0x4080ff)
-  ];
-
-  // Optimized color generation with fewer object allocations
-  const tempColor = new THREE.Color();
-  for (let i = 0; i < particleCount; i++) {
-    const t = i / Math.max(particleCount - 1, 1);
-    const idx = t * (palette.length - 1);
-    const floorIdx = Math.floor(idx);
-    const ceilIdx = Math.min(Math.ceil(idx), palette.length - 1);
-    const mix = idx % 1;
-    
-    tempColor.lerpColors(palette[floorIdx], palette[ceilIdx], mix).multiplyScalar(1.3);
-    
-    const i3 = i * 3;
-    colArr[i3] = tempColor.r;
-    colArr[i3 + 1] = tempColor.g;
-    colArr[i3 + 2] = tempColor.b;
-    
-    origCols[i] = tempColor.clone();
-    twinkle[i] = Math.random() < 0.5 ? Math.random() * 6 + 3 : 0;
-    sizes[i] = 0.02 + Math.random() * 0.04;
-  }
-
-  geom.setAttribute('color', new THREE.Float32BufferAttribute(colArr, 3));
-  geom.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
-  
-  // Enable frustum culling and set bounding sphere for better performance
-  geom.computeBoundingSphere();
-
-  const mat = new THREE.PointsMaterial({
-    size: 0.03,
-    vertexColors: true,
-    sizeAttenuation: true,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-
-  const particles = new THREE.Points(geom, mat);
-  particles.userData = { targets: [], origCols, twinkle };
-  scene.add(particles);
-
-  let shapeIndex = 0;
-  const clock = new THREE.Clock();
-  let time = 0;
-  
-  // Performance monitoring
-  let frameCount = 0;
-  let lastTime = performance.now();
-  let fps = 60;
-
-  // Optimized sparkle effect with reduced frequency updates
-  let sparkleFrameCounter = 0;
-  const sparkleUpdateFrequency = isMobile ? 3 : 2; // Update less frequently on mobile
-  
-  function applySparkle(sys, t) {
-    // Skip sparkle updates on some frames for better performance
-    sparkleFrameCounter++;
-    if (sparkleFrameCounter % sparkleUpdateFrequency !== 0) return;
-    
-    const cols = sys.geometry.attributes.color;
-    const { origCols, twinkle } = sys.userData;
-    const colArray = cols.array;
-    
-    // Use direct array access for better performance
-    for (let i = 0; i < cols.count; i++) {
-      if (twinkle[i] > 0) {
-        const p = Math.pow(Math.abs(Math.sin(twinkle[i] * t + i * 0.1)), 10);
-        const b = 1 + 4 * p;
-        const oc = origCols[i];
-        const i3 = i * 3;
-        colArray[i3] = oc.r * b;
-        colArray[i3 + 1] = oc.g * b;
-        colArray[i3 + 2] = oc.b * b;
-      }
-    }
-    cols.needsUpdate = true;
-  }
-
-  function morph(toIndex) {
-    const pos = particles.geometry.attributes.position.array;
-    const dest = particles.userData.targets[toIndex];
-    gsap.killTweensOf(pos);
-    gsap.to(pos, {
-      endArray: dest,
-      duration: 2,
-      ease: 'power2.inOut',
-      onUpdate: () => particles.geometry.attributes.position.needsUpdate = true
-    });
-  }
-
-  document.getElementById('morphButton').addEventListener('click', () => {
-    if (particles.userData.targets.length > 0) {
-      shapeIndex = (shapeIndex + 1) % particles.userData.targets.length;
-      morph(shapeIndex);
-    }
-  });
-
-  function animate() {
-    requestAnimationFrame(animate);
-    
-    // Performance monitoring
-    const currentTime = performance.now();
-    frameCount++;
-    if (currentTime - lastTime >= 1000) {
-      fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
-      frameCount = 0;
-      lastTime = currentTime;
-      
-      // Log performance occasionally (every 5 seconds)
-      if (Math.random() < 0.002) {
-        console.log(`Performance: ${fps} FPS, Particles: ${particleCount}`);
-      }
-    }
-    
-    const dt = clock.getDelta();
-    time += dt;
-    
-    // Adaptive rotation speed based on performance
-    const rotationSpeed = fps > 30 ? 0.005 : 0.003;
-    particles.rotation.y += rotationSpeed;
-    
-    applySparkle(particles, time);
-    controls.update();
-    composer.render();
-  }
-
-  window.addEventListener('resize', () => {
-    const w = window.innerWidth, h = window.innerHeight;
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
-    composer.setSize(w, h);
-  });
-
-  // Memory cleanup utility
-  function cleanupUnusedResources() {
-    if (renderer && renderer.info) {
-      const memoryInfo = renderer.info.memory;
-      console.log('GPU Memory - Geometries:', memoryInfo.geometries, 'Textures:', memoryInfo.textures);
-    }
-    
-    // Force garbage collection if available (development only)
-    if (window.gc && Math.random() < 0.001) {
-      window.gc();
-    }
-  }
-
-  // Initialize application
-  gsapScript.onload = async () => {
-    try {
-      await initializeTargets();
-      animate();
-      
-      // Set up periodic cleanup for mobile devices
-      if (isMobile) {
-        setInterval(cleanupUnusedResources, 30000); // Every 30 seconds
-      }
-    } catch (error) {
-      console.error('Failed to initialize application:', error);
-    }
-  };
-  </script>
+  <!-- Main Application -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

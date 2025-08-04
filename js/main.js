@@ -8,6 +8,14 @@ import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
 import { FilmPass } from 'three/addons/postprocessing/FilmPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+// Import modules
+import { initWebGPU, webgpuSystem, useWebGPU } from './modules/webgpu.js';
+import { 
+  controlState, 
+  colorPalettes, 
+  initializeControlPanel
+} from './modules/controls.js';
+
 // Mobile detection - must be defined early as it's used throughout
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
@@ -172,18 +180,18 @@ async function createGLBPoints(filePath, totalPoints, scale = 10.0) {
   });
 }
 
-const count = 2500;
+const count = controlState.particleCount; // Use control state particle count
 let targets = [];
 let currentTargetIndex = 0;
 
 // Mobile performance detection
-const particleCount = isMobile ? Math.min(count, 1500) : count; // Reduce particles on mobile
+const particleCount = isMobile ? Math.min(count, 1500) : count;
 
 async function initializeTargets() {
   // Parallel loading for better performance
   const loadPromises = [
-    createGLBPoints('./glb/life.glb', particleCount, 12.0),
     createGLBPoints('./glb/logo.glb', particleCount, 12.0),
+    createGLBPoints('./glb/life.glb', particleCount, 12.0),
     createGLBPoints('./glb/nati.glb', particleCount, 12.0)
   ];
   
@@ -304,22 +312,247 @@ function applySparkle(sys, t) {
   cols.needsUpdate = true;
 }
 
+// Hover effects for Three.js fallback
+function applyHoverEffects(particles, controlState, time) {
+  if (!particles || !particles.geometry || !controlState.hoverEnabled) return;
+  
+  const positions = particles.geometry.attributes.position.array;
+  const colors = particles.geometry.attributes.color.array;
+  const mouse3D = new THREE.Vector3(controlState.mousePos.x * 10, controlState.mousePos.y * 10, 0);
+  
+  for (let i = 0; i < positions.length; i += 3) {
+    const particle = new THREE.Vector3(positions[i], positions[i + 1], positions[i + 2]);
+    const distance = particle.distanceTo(mouse3D);
+    
+    if (distance < controlState.hoverRadius) {
+      const influence = (1 - distance / controlState.hoverRadius) * controlState.hoverStrength * 0.1;
+      const direction = particle.clone().sub(mouse3D).normalize();
+      
+      if (controlState.hoverRepulsion) {
+        // Repulsion effect
+        positions[i] += direction.x * influence;
+        positions[i + 1] += direction.y * influence;
+        positions[i + 2] += direction.z * influence;
+      } else {
+        // Attraction effect
+        positions[i] -= direction.x * influence;
+        positions[i + 1] -= direction.y * influence;
+        positions[i + 2] -= direction.z * influence;
+      }
+      
+      // Color highlight effect
+      const colorIntensity = influence * 2;
+      const colorIndex = i;
+      colors[colorIndex] = Math.min(1, colors[colorIndex] + colorIntensity);
+      colors[colorIndex + 1] = Math.min(1, colors[colorIndex + 1] + colorIntensity * 0.5);
+      colors[colorIndex + 2] = Math.min(1, colors[colorIndex + 2] + colorIntensity);
+    }
+  }
+  
+  particles.geometry.attributes.position.needsUpdate = true;
+  particles.geometry.attributes.color.needsUpdate = true;
+}
+
 function morph(toIndex) {
+  console.log('Morph function called with index:', toIndex);
+  console.log('useWebGPU:', useWebGPU);
+  console.log('webgpuSystem available:', !!webgpuSystem);
+  
   const pos = particles.geometry.attributes.position.array;
   const dest = particles.userData.targets[toIndex];
-  gsap.killTweensOf(pos);
-  gsap.to(pos, {
-    endArray: dest,
-    duration: 2,
-    ease: 'power2.inOut',
-    onUpdate: () => particles.geometry.attributes.position.needsUpdate = true
-  });
+  
+  if (!dest) {
+    console.error('No destination target found for index:', toIndex);
+    return;
+  }
+  
+  console.log('Destination points:', dest.length);
+  console.log('Current position array length:', pos.length);
+  
+  // Update shape display
+  const shapes = ['Logo', 'Life', 'Nati'];
+  const shapeDisplay = document.getElementById('shapeDisplay');
+  if (shapeDisplay) {
+    shapeDisplay.textContent = shapes[toIndex] || `Shape ${toIndex + 1}`;
+  }
+  
+  // Use control state for morph speed
+  const duration = 4 / controlState.morphSpeed;
+  
+  // TEMPORARILY: Always use Three.js morphing to debug
+  console.log('FORCED Three.js morphing for debugging');
+  console.log('Starting position sample:', pos.slice(0, 9));
+  console.log('Target position sample:', dest.slice(0, 9));
+  
+  // Fallback to Three.js morphing
+  if (typeof gsap !== 'undefined') {
+    gsap.killTweensOf(pos);
+    gsap.to(pos, {
+      endArray: dest,
+      duration: duration,
+      ease: 'power2.inOut',
+      onUpdate: () => {
+        particles.geometry.attributes.position.needsUpdate = true;
+        console.log('GSAP morphing - position updated');
+      },
+      onComplete: () => {
+        console.log('GSAP morphing complete');
+      }
+    });
+  } else {
+    // Manual morphing without GSAP
+    console.log('Using manual morphing');
+    manualMorph(pos, dest, duration);
+  }
+  
+  /* ORIGINAL WebGPU CODE - COMMENTED OUT FOR DEBUGGING
+  if (useWebGPU && webgpuSystem) {
+    console.log('Using WebGPU morphing');
+    // Update WebGPU targets
+    webgpuSystem.updateTargets(dest);
+    
+    // Force immediate morph for testing
+    controlState.morphProgress = 0.5; // Set to middle of morph
+    
+    // Animate morph progress for WebGPU
+    if (typeof gsap !== 'undefined') {
+      gsap.to(controlState, {
+        morphProgress: 1,
+        duration: duration,
+        ease: 'power2.inOut',
+        onComplete: () => {
+          controlState.morphProgress = 0;
+        }
+      });
+    } else {
+      // Fallback animation without GSAP
+      animateMorphProgress(duration);
+    }
+  }
+  */
+}
+
+// Sync WebGPU computed particles with Three.js geometry for visual updates
+async function syncWebGPUParticles() {
+  if (!webgpuSystem || !particles) return;
+  
+  try {
+    // Read particle data from WebGPU
+    const particleData = await webgpuSystem.readParticleData();
+    
+    // Update Three.js geometry positions
+    const positions = particles.geometry.attributes.position.array;
+    const colors = particles.geometry.attributes.color.array;
+    
+    // WebGPU particle format: position(3) + velocity(3) + life(1) + size(1) + color(3) + target(3) = 14 floats
+    for (let i = 0; i < particleData.length; i += 14) {
+      const particleIndex = i / 14;
+      const posIndex = particleIndex * 3;
+      const colorIndex = particleIndex * 3;
+      
+      if (posIndex + 2 < positions.length) {
+        // Update positions
+        positions[posIndex] = particleData[i];     // x
+        positions[posIndex + 1] = particleData[i + 1]; // y
+        positions[posIndex + 2] = particleData[i + 2]; // z
+        
+        // Update colors if available
+        if (colorIndex + 2 < colors.length) {
+          colors[colorIndex] = particleData[i + 8];     // r
+          colors[colorIndex + 1] = particleData[i + 9]; // g
+          colors[colorIndex + 2] = particleData[i + 10]; // b
+        }
+      }
+    }
+    
+    particles.geometry.attributes.position.needsUpdate = true;
+    if (particles.geometry.attributes.color) {
+      particles.geometry.attributes.color.needsUpdate = true;
+    }
+  } catch (error) {
+    console.warn('Failed to sync WebGPU particles:', error);
+  }
+}
+
+// Fallback morph animation without GSAP
+function animateMorphProgress(duration) {
+  const startTime = performance.now();
+  
+  function animate() {
+    const elapsed = (performance.now() - startTime) / 1000;
+    const progress = Math.min(elapsed / duration, 1);
+    
+    controlState.morphProgress = progress;
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      controlState.morphProgress = 0;
+    }
+  }
+  
+  animate();
+}
+
+// Manual morphing without GSAP
+function manualMorph(pos, dest, duration) {
+  console.log('Manual morph started, duration:', duration);
+  const startPositions = [...pos];
+  const startTime = performance.now();
+  
+  function animate() {
+    const elapsed = (performance.now() - startTime) / 1000;
+    const progress = Math.min(elapsed / duration, 1);
+    
+    // Easing function (power2.inOut equivalent)
+    const easedProgress = progress < 0.5 
+      ? 2 * progress * progress 
+      : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+    
+    for (let i = 0; i < pos.length; i++) {
+      pos[i] = startPositions[i] + (dest[i] - startPositions[i]) * easedProgress;
+    }
+    
+    particles.geometry.attributes.position.needsUpdate = true;
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      console.log('Manual morph complete');
+    }
+  }
+  
+  animate();
 }
 
 document.getElementById('morphButton').addEventListener('click', () => {
-  if (particles.userData.targets.length > 0) {
+  console.log('Morph button clicked');
+  console.log('Targets available:', particles.userData.targets?.length || 0);
+  console.log('Current shapeIndex:', shapeIndex);
+  console.log('GSAP available:', typeof gsap !== 'undefined');
+  
+  if (particles.userData.targets && particles.userData.targets.length > 0) {
     shapeIndex = (shapeIndex + 1) % particles.userData.targets.length;
+    console.log('Morphing to shape index:', shapeIndex);
+    
+    // Visual feedback
+    const morphButton = document.getElementById('morphButton');
+    morphButton.style.transform = 'translateX(-50%) scale(0.9)';
+    setTimeout(() => {
+      morphButton.style.transform = 'translateX(-50%) scale(1)';
+    }, 150);
+    
+    // Update button text or add indicator
+    const shapes = ['Logo', 'Life', 'Nati'];
+    morphButton.title = `Current: ${shapes[shapeIndex] || 'Shape ' + (shapeIndex + 1)}`;
+    
     morph(shapeIndex);
+  } else {
+    console.error('No targets available for morphing');
+    // Retry initializing targets if they're missing
+    initializeTargets().then(() => {
+      console.log('Targets reinitialized, try morphing again');
+    });
   }
 });
 
@@ -343,9 +576,32 @@ function animate() {
   const dt = clock.getDelta();
   time += dt;
   
-  // Adaptive rotation speed based on performance
-  const rotationSpeed = fps > 30 ? 0.005 : 0.003;
-  particles.rotation.y += rotationSpeed;
+  // Auto-rotate or manual rotation control
+  if (controlState.autoRotate) {
+    particles.rotation.y += controlState.rotationSpeed;
+  }
+  
+  // Update WebGPU system if available
+  if (useWebGPU && webgpuSystem) {
+    webgpuSystem.updateUniforms(time, dt, controlState);
+    webgpuSystem.compute();
+    
+    // Only sync during morphing to avoid performance hit
+    if (controlState.morphProgress > 0) {
+      syncWebGPUParticles();
+    }
+  }
+  
+  // Apply hover effects to Three.js particles (fallback when WebGPU is not available)
+  if (!useWebGPU && controlState.hoverEnabled) {
+    applyHoverEffects(particles, controlState, time);
+  }
+  
+  // Update performance display
+  const fpsDisplay = document.getElementById('fpsDisplay');
+  if (fpsDisplay) {
+    fpsDisplay.textContent = fps;
+  }
   
   applySparkle(particles, time);
   controls.update();
@@ -373,10 +629,89 @@ function cleanupUnusedResources() {
   }
 }
 
+// Update functions for control panel integration
+function updateParticleColors(paletteIndex) {
+  if (!particles || !particles.userData.origCols) return;
+  
+  const palette = colorPalettes[paletteIndex];
+  const { origCols } = particles.userData;
+  const cols = particles.geometry.attributes.color;
+  
+  for (let i = 0; i < origCols.length; i++) {
+    const t = i / Math.max(origCols.length - 1, 1);
+    const idx = t * (palette.length - 1);
+    const floorIdx = Math.floor(idx);
+    const ceilIdx = Math.min(Math.ceil(idx), palette.length - 1);
+    const mix = idx % 1;
+    
+    const color = new THREE.Color().lerpColors(palette[floorIdx], palette[ceilIdx], mix);
+    color.multiplyScalar(1.3);
+    
+    origCols[i] = color;
+    
+    const i3 = i * 3;
+    cols.array[i3] = color.r;
+    cols.array[i3 + 1] = color.g;
+    cols.array[i3 + 2] = color.b;
+  }
+  
+  cols.needsUpdate = true;
+}
+
+function updateParticleSize(size) {
+  if (particles && particles.material) {
+    particles.material.size = size;
+  }
+}
+
+function updateParticleOpacity(opacity) {
+  if (particles && particles.material) {
+    particles.material.opacity = opacity;
+  }
+}
+
+function updateBloomStrength(strength) {
+  if (bloom) {
+    bloom.strength = strength;
+  }
+}
+
+function updateBloomRadius(radius) {
+  if (bloom) {
+    bloom.radius = radius;
+  }
+}
+
 // Initialize application
 gsapScript.onload = async () => {
   try {
+    // Try to initialize WebGPU first
+    const webgpuInitialized = await initWebGPU();
+    
+    if (webgpuInitialized) {
+      const statusEl = document.getElementById('webgpuStatus');
+      if (statusEl) {
+        statusEl.textContent = 'Active';
+        statusEl.style.color = '#00ff88';
+      }
+    } else {
+      const statusEl = document.getElementById('webgpuStatus');
+      if (statusEl) {
+        statusEl.textContent = 'Fallback';
+        statusEl.style.color = '#ffaa00';  
+      }
+    }
+    
     await initializeTargets();
+    initializeControlPanel(renderer, webgpuSystem, useWebGPU);
+    
+    // Set up control panel update functions
+    window.updateParticleColors = updateParticleColors;
+    window.updateParticleSize = updateParticleSize;
+    window.updateParticleOpacity = updateParticleOpacity;
+    window.updateBloomStrength = updateBloomStrength;
+    window.updateBloomRadius = updateBloomRadius;
+    
     animate();
     
     // Set up periodic cleanup for mobile devices
